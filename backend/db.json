@@ -1,0 +1,270 @@
+{
+  "rooms": [
+    {
+      "id": "101",
+      "floor": "1st",
+      "type": "Double",
+      "rent": 250,
+      "status": "Occupied",
+      "beds": {
+        "Bed A": 1,
+        "Bed B": null
+      }
+    },
+    {
+      "id": "102",
+      "floor": "1st",
+      "type": "Double",
+      "rent": 250,
+      "status": "Full",
+      "beds": {
+        "Bed A": 2,
+        "Bed B": 3
+      }
+    },
+    {
+      "id": "103",
+      "floor": "1st",
+      "type": "Single",
+      "rent": 350,
+      "status": "Vacant",
+      "beds": {
+        "Bed A": null
+      }
+    },
+    {
+      "id": "201",
+      "floor": "2nd",
+      "type": "Triple",
+      "rent": 200,
+      "status": "Vacant",
+      "beds": {
+        "Bed A": null,
+        "Bed B": null,
+        "Bed C": null
+      }
+    },
+    {
+      "id": "202",
+      "floor": "2nd",
+      "type": "Double",
+      "rent": 250,
+      "status": "Maintenance",
+      "beds": {
+        "Bed A": null,
+        "Bed B": null
+      }
+    },
+    {
+      "id": "301",
+      "floor": "3rd",
+      "type": "Single",
+      "rent": 350,
+      "status": "Occupied",
+      "beds": {
+        "Bed A": 5
+      }
+    }
+  ],
+  "students": [
+    {
+      "id": 1,
+      "roll": "H2026-001",
+      "name": "Alex Carter",
+      "branch": "Computer Science",
+      "phone": "+1 555-0101",
+      "email": "alex.c@college.edu",
+      "roomId": "101",
+      "bedLabel": "Bed A"
+    },
+    {
+      "id": 2,
+      "roll": "H2026-002",
+      "name": "Jordan Smith",
+      "branch": "Electrical Eng",
+      "phone": "+1 555-0102",
+      "email": "jordan.s@college.edu",
+      "roomId": "102",
+      "bedLabel": "Bed A"
+    },
+    {
+      "id": 3,
+      "roll": "H2026-003",
+      "name": "Taylor Vance",
+      "branch": "Mechanical Eng",
+      "phone": "+1 555-0103",
+      "email": "taylor.v@college.edu",
+      "roomId": "102",
+      "bedLabel": "Bed B"
+    },
+    {
+      "id": 4,
+      "roll": "H2026-004",
+      "name": "Casey Lin",
+      "branch": "Civil Eng",
+      "phone": "+1 555-0104",
+      "email": "casey.l@college.edu",
+      "roomId": null,
+      "bedLabel": null
+    },
+    {
+      "id": 5,
+      "roll": "H2026-005",
+      "name": "Morgan Brooks",
+      "branch": "Information Tech",
+      "phone": "+1 555-0105",
+      "email": "morgan.b@college.edu",
+      "roomId": "301",
+      "bedLabel": "Bed A"
+    }
+  ],
+  "fees": [
+    {
+      "id": "F1001",
+      "studentId": 1,
+      "description": "Hostel Rent - May 2026",
+      "amount": 250,
+      "dueDate": "2026-05-15",
+      "status": "Paid",
+      "issueDate": "2026-05-01"
+    },
+    {
+      "id": "F1002",
+      "studentId": 2,
+      "description": "Hostel Rent - May 2026",
+      "amount": 250,
+      "dueDate": "2026-05-15",
+      "status": "Paid",
+      "issueDate": "2026-05-01"
+    },
+    {
+      "id": "F1003",
+      "studentId": 3,
+      "description": "Hostel Rent - May 2026",
+      "amount": 250,
+      "dueDate": "2026-06-05",
+      "status": "Pending",
+      "issueDate": "2026-05-01"
+    },
+    {
+      "id": "F1004",
+      "studentId": 4,
+      "description": "Mess Charges Q2",
+      "amount": 180,
+      "dueDate": "2026-06-10",
+      "status": "Pending",
+      "issueDate": "2026-05-10"
+    },
+    {
+      "id": "F1005",
+      "studentId": 5,
+      "description": "Hostel Rent - May 2026",
+      "amount": 350,
+      "dueDate": "2026-05-15",
+      "status": "Paid",
+      "issueDate": "2026-05-01"
+    }
+  ],
+  "complaints": [
+    {
+      "id": "C101",
+      "studentId": 1,
+      "category": "Internet/Wifi",
+      "urgency": "High",
+      "subject": "WiFi router is down",
+      "description": "No internet connectivity since yesterday night. Affecting online exam preparation.",
+      "status": "Pending",
+      "date": "2026-05-28",
+      "adminComment": null
+    },
+    {
+      "id": "C102",
+      "studentId": 2,
+      "category": "Plumbing",
+      "urgency": "Medium",
+      "subject": "Water leakage in tap",
+      "description": "The tap leaks constantly, making noise and wasting water.",
+      "status": "In Progress",
+      "date": "2026-05-27",
+      "adminComment": "Plumber notified, scheduled to visit."
+    },
+    {
+      "id": "C103",
+      "studentId": 3,
+      "category": "Electrical",
+      "urgency": "Low",
+      "subject": "Ceiling fan speed is slow",
+      "description": "Fan in Room 102 runs very slowly even at max speed.",
+      "status": "Resolved",
+      "date": "2026-05-25",
+      "adminComment": "Capacitor replaced. Fan checked."
+    }
+  ],
+  "notices": [
+    {
+      "id": "N101",
+      "date": "2026-05-28",
+      "title": "Power Shutdown Maintenance",
+      "category": "Maintenance Alert",
+      "message": "There will be a brief power shutdown for electrical maintenance on Saturday, May 30th from 9:00 AM to 11:00 AM. Elevators will be offline during this window."
+    },
+    {
+      "id": "N102",
+      "date": "2026-05-26",
+      "title": "Revised Dinner Timings",
+      "category": "Dining",
+      "message": "Mess timings have been extended. Dinner is now served 7:30 PM - 10:00 PM starting this Friday to facilitate study sessions."
+    }
+  ],
+  "attendance": {
+    "2026-05-29": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Absent"
+    },
+    "2026-05-28": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    },
+    "2026-05-27": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    },
+    "2026-05-26": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    },
+    "2026-05-25": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    },
+    "2026-05-24": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    },
+    "2026-05-23": {
+      "1": "Present",
+      "2": "Present",
+      "3": "Present",
+      "4": "Absent",
+      "5": "Present"
+    }
+  }
+}
