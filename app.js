@@ -365,6 +365,7 @@ async function showView(viewId) {
 
 function renderAdminDashboard() {
   document.getElementById("admin-stat-total-students").innerText = state.students.length;
+  fetchAuditLogs();
   
   let totalBeds = 0;
   let occupiedBeds = 0;
@@ -397,7 +398,7 @@ function renderAdminDashboard() {
   const pendingFeesSum = state.fees
     .filter(f => f.status === "Pending")
     .reduce((sum, f) => sum + f.amount, 0);
-  document.getElementById("admin-stat-pending-fees").innerText = `$${pendingFeesSum}`;
+  document.getElementById("admin-stat-pending-fees").innerText = `₹${pendingFeesSum}`;
   
   const paidFeesSum = state.fees
     .filter(f => f.status === "Paid")
@@ -409,7 +410,7 @@ function renderAdminDashboard() {
   const revPercentText = document.getElementById("admin-revenue-percentage");
   if (revProgress && revPercentText) {
     revProgress.style.width = `${collectionRate}%`;
-    revPercentText.innerText = `${collectionRate}% Collected ($${paidFeesSum} of $${totalFeesSum})`;
+    revPercentText.innerText = `${collectionRate}% Collected (₹${paidFeesSum} of ₹${totalFeesSum})`;
   }
 
   // Render attendance sub-list
@@ -579,6 +580,7 @@ function filterByFloor(floor) {
 function renderRoomsGrid() {
   const grid = document.getElementById("rooms-grid");
   if (!grid) return;
+  renderWardenRoomSwitches();
   grid.innerHTML = "";
   
   const typeFilter = document.getElementById("filter-room-type").value;
@@ -639,7 +641,7 @@ function renderRoomsGrid() {
       </div>
       <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px; display:flex; justify-content:space-between;">
         <span>Type: ${room.type} Room</span>
-        <span>Rent: $${room.rent}/mo</span>
+        <span>Rent: ₹${room.rent}/mo</span>
       </div>
       <div class="room-beds-container">
         ${bedsHTML}
@@ -664,13 +666,69 @@ function renderAdminFees() {
   let collectedSum = 0;
   let overdueSum = 0;
   
+  // Calculate sums based on ALL fees first
   state.fees.forEach(f => {
-    const student = state.students.find(s => s.id === f.studentId);
-    const row = document.createElement("tr");
-    
-    totalSum += f.amount;
     if (f.status === "Paid") collectedSum += f.amount;
     else if (f.status === "Pending") overdueSum += f.amount;
+    totalSum += f.amount;
+  });
+
+  document.getElementById("admin-fees-stat-total").innerText = `₹${totalSum}`;
+  document.getElementById("admin-fees-stat-collected").innerText = `₹${collectedSum}`;
+  document.getElementById("admin-fees-stat-overdue").innerText = `₹${overdueSum}`;
+
+  // Read filter values
+  const searchInput = document.getElementById("search-invoice");
+  const searchQuery = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  
+  const statusFilter = document.getElementById("filter-invoice-status");
+  const selectedStatus = statusFilter ? statusFilter.value : "all";
+  
+  const sortFilter = document.getElementById("sort-invoice");
+  const selectedSort = sortFilter ? sortFilter.value : "date-newest";
+  
+  // Filter
+  let filteredFees = state.fees.filter(f => {
+    const student = state.students.find(s => s.id === f.studentId);
+    
+    // Status Filter
+    if (selectedStatus !== "all" && f.status !== selectedStatus) return false;
+    
+    // Search Query Filter
+    if (searchQuery) {
+      const matchInvoiceId = f.id.toLowerCase().includes(searchQuery);
+      const matchStudentName = student && student.name.toLowerCase().includes(searchQuery);
+      const matchStudentRoll = student && student.roll.toLowerCase().includes(searchQuery);
+      const matchDesc = f.description.toLowerCase().includes(searchQuery);
+      if (!matchInvoiceId && !matchStudentName && !matchStudentRoll && !matchDesc) return false;
+    }
+    
+    return true;
+  });
+
+  // Sort
+  filteredFees.sort((a, b) => {
+    if (selectedSort === "date-newest") {
+      return new Date(b.issueDate) - new Date(a.issueDate);
+    } else if (selectedSort === "date-oldest") {
+      return new Date(a.issueDate) - new Date(b.issueDate);
+    } else if (selectedSort === "amount-high") {
+      return b.amount - a.amount;
+    } else if (selectedSort === "amount-low") {
+      return a.amount - b.amount;
+    }
+    return 0;
+  });
+
+  // Render rows
+  if (filteredFees.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">No invoices match this search/filter.</td></tr>`;
+    return;
+  }
+
+  filteredFees.forEach(f => {
+    const student = state.students.find(s => s.id === f.studentId);
+    const row = document.createElement("tr");
     
     let statusBadge = `<span class="badge badge-warning">Pending</span>`;
     if (f.status === "Paid") statusBadge = `<span class="badge badge-success">Paid</span>`;
@@ -683,7 +741,7 @@ function renderAdminFees() {
       <td>${f.description}</td>
       <td>${f.issueDate}</td>
       <td>${f.dueDate}</td>
-      <td><span style="font-weight: 600;">$${f.amount}</span></td>
+      <td><span style="font-weight: 600;">₹${f.amount}</span></td>
       <td>${statusBadge}</td>
       <td>
         ${f.status === "Pending" ? 
@@ -694,10 +752,6 @@ function renderAdminFees() {
     `;
     tbody.appendChild(row);
   });
-
-  document.getElementById("admin-fees-stat-total").innerText = `$${totalSum}`;
-  document.getElementById("admin-fees-stat-collected").innerText = `$${collectedSum}`;
-  document.getElementById("admin-fees-stat-overdue").innerText = `$${overdueSum}`;
 }
 
 function renderAdminComplaints() {
@@ -922,7 +976,7 @@ function renderStudentDashboard() {
     .filter(f => f.studentId === student.id && f.status === "Pending")
     .reduce((sum, f) => sum + f.amount, 0);
   
-  document.getElementById("student-stat-pending-fees").innerText = `$${unpaidSum}`;
+  document.getElementById("student-stat-pending-fees").innerText = `₹${unpaidSum}`;
   document.getElementById("student-stat-payment-desc").innerText = unpaidSum > 0 ? `${state.fees.filter(f => f.studentId === student.id && f.status === "Pending").length} Invoice pending payment` : "All accounts cleared";
   
   const myComplaintsCount = state.complaints.filter(c => c.studentId === student.id).length;
@@ -982,6 +1036,8 @@ function renderStudentRoomView() {
   
   if (!roommatesContainer) return;
   roommatesContainer.innerHTML = "";
+  
+  renderStudentSwitchStatus();
   
   if (!student || !student.roomId) {
     roommatesContainer.innerHTML = `
@@ -1069,7 +1125,7 @@ function renderStudentFees() {
       <td>${f.description}</td>
       <td>${f.issueDate}</td>
       <td>${f.dueDate}</td>
-      <td><span style="font-weight:600;">$${f.amount}</span></td>
+      <td><span style="font-weight:600;">₹${f.amount}</span></td>
       <td>${statusBadge}</td>
       <td>
         ${f.status === "Pending" ? 
@@ -1239,6 +1295,10 @@ function openModal(modalId) {
         bedSelect.innerHTML = "";
         bedSelect.removeAttribute("required");
       }
+      const priceDisplayRow = document.getElementById("room-price-display-row");
+      if (priceDisplayRow) priceDisplayRow.style.display = "none";
+      const paymentContainer = document.getElementById("advance-payment-container");
+      if (paymentContainer) paymentContainer.style.display = "none";
     }
   }
 }
@@ -1323,6 +1383,11 @@ function handleRoomSelectionChange() {
   const roomSelect = document.getElementById("student-room-assign");
   const bedSelect = document.getElementById("student-bed-assign");
   const bedContainer = document.getElementById("bed-assign-container");
+  const priceDisplayRow = document.getElementById("room-price-display-row");
+  const priceLabel = document.getElementById("lbl-room-price");
+  const paymentContainer = document.getElementById("advance-payment-container");
+  const paymentSelect = document.getElementById("student-advance-payment");
+  
   if (!roomSelect || !bedSelect || !bedContainer) return;
   
   const roomId = roomSelect.value;
@@ -1330,6 +1395,8 @@ function handleRoomSelectionChange() {
     bedContainer.style.display = "none";
     bedSelect.innerHTML = "";
     bedSelect.removeAttribute("required");
+    if (priceDisplayRow) priceDisplayRow.style.display = "none";
+    if (paymentContainer) paymentContainer.style.display = "none";
   } else {
     bedContainer.style.display = "block";
     bedSelect.innerHTML = '<option value="" disabled selected>-- Select a Bed --</option>';
@@ -1345,6 +1412,20 @@ function handleRoomSelectionChange() {
           bedSelect.appendChild(opt);
         }
       });
+      
+      // Update and show room rent price in Rupees
+      if (priceDisplayRow && priceLabel) {
+        priceDisplayRow.style.display = "block";
+        priceLabel.innerText = `₹${room.rent} / month`;
+      }
+      
+      // Show payment status selection
+      if (paymentContainer) {
+        paymentContainer.style.display = "block";
+        if (paymentSelect) {
+          paymentSelect.value = "Cash";
+        }
+      }
     }
   }
 }
@@ -1383,6 +1464,7 @@ async function registerStudent(event) {
   
   let roomId = null;
   let bedLabel = null;
+  let advancePayment = null;
   
   if (roomAssign !== "none") {
     roomId = roomAssign;
@@ -1391,10 +1473,12 @@ async function registerStudent(event) {
       alert("Please select a vacant bed for the assigned room!");
       return;
     }
+    advancePayment = document.getElementById("student-advance-payment").value;
   }
   
   try {
-    await apiPost("/students", { name, roll, branch, phone, email, roomId, bedLabel });
+    const isPaid = advancePayment && advancePayment !== "Pending";
+    await apiPost("/students", { name, roll, branch, phone, email, roomId, bedLabel, advancePayment });
     closeModal("modal-register-student");
     document.getElementById("form-register-student").reset();
     
@@ -1408,11 +1492,23 @@ async function registerStudent(event) {
       bedSelect.innerHTML = "";
       bedSelect.removeAttribute("required");
     }
+    const priceDisplayRow = document.getElementById("room-price-display-row");
+    if (priceDisplayRow) priceDisplayRow.style.display = "none";
+    const paymentContainer = document.getElementById("advance-payment-container");
+    if (paymentContainer) paymentContainer.style.display = "none";
     
     // Refresh selections & render table
     await refreshState();
     populateStudentContextSelector();
     renderStudentsTable();
+    
+    if (roomAssign !== "none" && !isPaid) {
+      alert("Advance payment is required to allocate a room. Room assignment has been set to 'Assign Room Later' (Awaiting Bed), and a pending advance rent invoice has been generated for the resident to pay.");
+    } else if (roomAssign !== "none" && isPaid) {
+      alert(`Success! Resident registered and Room ${roomId} (${bedLabel}) allocated successfully. Payment recorded via ${advancePayment}.`);
+    } else {
+      alert("Resident registered successfully with 'Assign Room Later'.");
+    }
   } catch (err) {
     alert(err.message);
   }
@@ -1474,6 +1570,11 @@ function openAllocateStudentModal(studentId) {
       bedSelect.innerHTML = "";
       bedSelect.removeAttribute("required");
     }
+
+    const priceDisplayRow = document.getElementById("room-price-display-row");
+    if (priceDisplayRow) priceDisplayRow.style.display = "none";
+    const paymentContainer = document.getElementById("advance-payment-container");
+    if (paymentContainer) paymentContainer.style.display = "none";
 
     // Delete original from server to save as re-allocation
     apiDelete(`/students/${studentId}`);
@@ -1612,7 +1713,7 @@ function openPaymentGateway(invoiceId, amount) {
   if (!invoice || !student) return;
   
   document.getElementById("checkout-invoice-id").value = invoiceId;
-  document.getElementById("card-preview-amount").innerText = `$${amount.toFixed(2)}`;
+  document.getElementById("card-preview-amount").innerText = `₹${amount.toFixed(2)}`;
   document.getElementById("card-preview-holder").innerText = student.name;
   document.getElementById("card-holder").value = student.name;
   
@@ -1659,7 +1760,7 @@ async function processCheckout(event) {
       
       document.getElementById("checkout-processing-state").style.display = "none";
       document.getElementById("checkout-success-state").style.display = "block";
-      document.getElementById("checkout-receipt-text").innerText = `Payment receipt of $${invoice.amount.toFixed(2)} generated for ID ${invoiceId}. Description: ${invoice.description}.`;
+      document.getElementById("checkout-receipt-text").innerText = `Payment receipt of ₹${invoice.amount.toFixed(2)} generated for ID ${invoiceId}. Description: ${invoice.description}.`;
       
       await refreshState();
       renderStudentFees();
@@ -1671,4 +1772,248 @@ async function processCheckout(event) {
     document.getElementById("checkout-processing-state").style.display = "none";
   }
 }
+
+// ================= PREMIUM FEATURES: TIMELINE, SWITCHES & SPREADSHEETS =================
+
+async function fetchAuditLogs() {
+  const container = document.getElementById("admin-audit-logs");
+  if (!container) return;
+  
+  try {
+    const logs = await apiGet("/logs");
+    container.innerHTML = "";
+    
+    if (logs.length === 0) {
+      container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 12px; padding: 15px;">Audit trail is empty.</div>`;
+      return;
+    }
+    
+    logs.forEach(l => {
+      const item = document.createElement("div");
+      item.style.display = "flex";
+      item.style.gap = "10px";
+      item.style.padding = "6px 8px";
+      item.style.borderRadius = "6px";
+      item.style.background = "rgba(255, 255, 255, 0.01)";
+      item.style.fontSize = "12px";
+      item.style.alignItems = "flex-start";
+      item.style.borderLeft = "2px solid var(--accent-primary)";
+      
+      const time = new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      item.innerHTML = `
+        <span style="color: var(--accent-primary); font-weight: 600; font-family: monospace; flex-shrink: 0;">[${time}]</span>
+        <span style="color: var(--text-secondary); word-break: break-word;">${l.action}</span>
+      `;
+      container.appendChild(item);
+    });
+  } catch (err) {
+    console.error("Could not fetch audit logs:", err);
+  }
+}
+
+async function renderStudentSwitchStatus() {
+  const switchCard = document.getElementById("student-switch-status-card");
+  const switchForm = document.getElementById("form-request-room-switch");
+  const switchSelect = document.getElementById("switch-target-room");
+  
+  if (!switchCard || !switchForm) return;
+  
+  const student = state.students.find(s => s.id === activeStudentId);
+  if (!student) return;
+
+  // Populate switchSelect dropdown
+  if (switchSelect) {
+    switchSelect.innerHTML = '<option value="" disabled selected>-- Select a Room --</option>';
+    state.rooms.forEach(room => {
+      if (room.status !== "Maintenance" && room.id !== student.roomId) {
+        let vacantBedsCount = Object.keys(room.beds).filter(b => room.beds[b] === null).length;
+        if (vacantBedsCount > 0) {
+          const opt = document.createElement("option");
+          opt.value = room.id;
+          opt.innerText = `Room ${room.id} (${room.type} • ${vacantBedsCount} Beds Open)`;
+          switchSelect.appendChild(opt);
+        }
+      }
+    });
+  }
+
+  try {
+    const requests = await apiGet(`/switches?studentId=${activeStudentId}`);
+    if (requests.length === 0) {
+      switchCard.style.display = "none";
+      switchForm.style.display = "block";
+    } else {
+      const lastReq = requests[requests.length - 1];
+      switchCard.style.display = "flex";
+      
+      let statusBadgeClass = "badge-warning";
+      if (lastReq.status === "Approved") statusBadgeClass = "badge-success";
+      if (lastReq.status === "Declined") statusBadgeClass = "badge-danger";
+      
+      switchCard.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:600; color:#fff;">
+          <span>Room Switch Status</span>
+          <span class="badge ${statusBadgeClass}">${lastReq.status}</span>
+        </div>
+        <div style="margin-top:6px; font-size:12px; color:var(--text-secondary);">
+          <div>Requested Room: <b>Room ${lastReq.requestedRoomId}</b></div>
+          <div>Reason: <i>"${lastReq.reason}"</i></div>
+          <div style="margin-top:4px; font-size:11px; color:var(--text-muted);">Submitted on: ${lastReq.date}</div>
+        </div>
+      `;
+      
+      if (lastReq.status === "Pending") {
+        switchForm.style.display = "none";
+      } else {
+        switchForm.style.display = "block";
+      }
+    }
+  } catch (err) {
+    console.error("Failed to render switch status:", err);
+  }
+}
+
+async function submitRoomSwitchRequest(event) {
+  event.preventDefault();
+  const requestedRoomId = document.getElementById("switch-target-room").value;
+  const reason = document.getElementById("switch-reason").value.trim();
+  
+  if (!requestedRoomId || !reason) {
+    alert("Please select a target room and provide a reason!");
+    return;
+  }
+  
+  try {
+    await apiPost("/switches", { studentId: activeStudentId, requestedRoomId, reason });
+    document.getElementById("form-request-room-switch").reset();
+    alert("Room switch request submitted successfully to Warden administrative queue!");
+    await refreshState();
+    renderStudentSwitchStatus();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function renderWardenRoomSwitches() {
+  const card = document.getElementById("card-room-switches");
+  const tbody = document.getElementById("tbl-switch-requests-body");
+  const countBadge = document.getElementById("lbl-switch-requests-count");
+  
+  if (!card || !tbody || !countBadge) return;
+  
+  try {
+    const requests = await apiGet("/switches");
+    const pendingReqs = requests.filter(r => r.status === "Pending");
+    
+    if (pendingReqs.length === 0) {
+      card.style.display = "none";
+      tbody.innerHTML = "";
+      countBadge.innerText = "0 Pending";
+    } else {
+      card.style.display = "block";
+      countBadge.innerText = `${pendingReqs.length} Pending`;
+      tbody.innerHTML = "";
+      
+      pendingReqs.forEach(r => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><b>${r.studentName}</b></td>
+          <td>Room ${r.currentRoomId} (${r.currentBedLabel})</td>
+          <td><span class="badge badge-info">Room ${r.requestedRoomId}</span></td>
+          <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.reason}"><i>"${r.reason}"</i></td>
+          <td>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-success btn-sm" onclick="respondToRoomSwitch('${r.id}', 'Approved')">Approve</button>
+              <button class="btn btn-danger btn-sm" onclick="respondToRoomSwitch('${r.id}', 'Declined')">Decline</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+  } catch (err) {
+    console.error("Failed to load switches for Warden:", err);
+  }
+}
+
+async function respondToRoomSwitch(switchId, status) {
+  const confirmAction = confirm(`Are you sure you want to ${status.toLowerCase()} this room switch request?`);
+  if (!confirmAction) return;
+  
+  try {
+    await apiPost(`/switches/${switchId}/respond`, { status });
+    alert(`Room switch request successfully ${status.toLowerCase()}!`);
+    await refreshState();
+    renderRoomsGrid();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function exportStudentsToCSV() {
+  if (state.students.length === 0) {
+    alert("No student records available to export!");
+    return;
+  }
+  const headers = ["Student ID", "Name", "Roll Number", "Branch/Course", "Phone", "Email", "Room ID", "Bed Space"];
+  const rows = state.students.map(s => [
+    s.id,
+    `"${s.name}"`,
+    s.roll,
+    `"${s.branch}"`,
+    `"${s.phone}"`,
+    s.email,
+    s.roomId || "Unallocated",
+    s.bedLabel || "None"
+  ]);
+  downloadCSV("Students_Registry.csv", [headers, ...rows]);
+}
+
+function exportFeesToCSV() {
+  if (state.fees.length === 0) {
+    alert("No fee invoices available to export!");
+    return;
+  }
+  const headers = ["Invoice ID", "Student Name", "Description", "Issue Date", "Due Date", "Amount (INR)", "Status"];
+  const rows = state.fees.map(f => {
+    const student = state.students.find(s => s.id === f.studentId);
+    return [
+      f.id,
+      `"${student ? student.name : 'Unknown'}"`,
+      `"${f.description}"`,
+      f.issueDate,
+      f.dueDate,
+      f.amount,
+      f.status
+    ];
+  });
+  downloadCSV("Billing_Ledger.csv", [headers, ...rows]);
+}
+
+function downloadCSV(filename, array) {
+  const csvContent = "\uFEFF" + array.map(e => e.join(",")).join("\n"); 
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  
+  if (navigator.msSaveBlob) { 
+    navigator.msSaveBlob(blob, filename);
+  } else {
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }
+}
+
+// Bind switch requests actions globally
+window.submitRoomSwitchRequest = submitRoomSwitchRequest;
+window.respondToRoomSwitch = respondToRoomSwitch;
+window.exportStudentsToCSV = exportStudentsToCSV;
+window.exportFeesToCSV = exportFeesToCSV;
+
 
