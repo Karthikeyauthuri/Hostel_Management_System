@@ -57,6 +57,13 @@ const defaultAdmins = [
   { username: "admin", password: "password", name: "Hostel Warden", email: "admin@hostelnest.com" }
 ];
 
+const defaultLogs = [
+  { id: "L1001", action: "System initialized and ready for bookings.", timestamp: new Date(Date.now() - 4*3600000).toISOString() },
+  { id: "L1002", action: "Seed data populated cleanly into collections.", timestamp: new Date(Date.now() - 3*3600000).toISOString() },
+  { id: "L1003", action: "Warden Admin registered and logged in.", timestamp: new Date(Date.now() - 2*3600000).toISOString() },
+  { id: "L1004", action: "Mess charges Q2 invoice generated successfully.", timestamp: new Date(Date.now() - 1*3600000).toISOString() }
+];
+
 
 
 function generateSeedAttendance() {
@@ -148,6 +155,25 @@ const AdminSchema = new mongoose.Schema({
   email: { type: String }
 });
 
+const ActivityLogSchema = new mongoose.Schema({
+  id: String,
+  action: String,
+  timestamp: String
+});
+
+const RoomSwitchSchema = new mongoose.Schema({
+  id: String,
+  studentId: Number,
+  studentName: String,
+  currentRoomId: String,
+  currentBedLabel: String,
+  requestedRoomId: String,
+  requestedBedLabel: String,
+  reason: String,
+  status: String,
+  date: String
+});
+
 const Room = mongoose.model('Room', RoomSchema);
 const Student = mongoose.model('Student', StudentSchema);
 const Fee = mongoose.model('Fee', FeeSchema);
@@ -155,6 +181,8 @@ const Complaint = mongoose.model('Complaint', ComplaintSchema);
 const Notice = mongoose.model('Notice', NoticeSchema);
 const Attendance = mongoose.model('Attendance', AttendanceSchema);
 const Admin = mongoose.model('Admin', AdminSchema);
+const ActivityLog = mongoose.model('ActivityLog', ActivityLogSchema);
+const RoomSwitch = mongoose.model('RoomSwitch', RoomSwitchSchema);
 
 // ================= DB DRIVER FLAG & MONGO CONNECT =================
 
@@ -182,7 +210,9 @@ let localState = {
   complaints: [],
   notices: [],
   attendance: {},
-  admins: []
+  admins: [],
+  logs: [],
+  switches: []
 };
 
 function readLocalDb() {
@@ -195,7 +225,9 @@ function readLocalDb() {
         complaints: defaultComplaints,
         notices: defaultNotices,
         attendance: generateSeedAttendance(),
-        admins: defaultAdmins
+        admins: defaultAdmins,
+        logs: defaultLogs,
+        switches: []
       };
       writeLocalDb();
     } else {
@@ -204,9 +236,14 @@ function readLocalDb() {
       // Ensure admins array exists
       if (!localState.admins) {
         localState.admins = [...defaultAdmins];
-        writeLocalDb();
       }
-
+      if (!localState.logs) {
+        localState.logs = [...defaultLogs];
+      }
+      if (!localState.switches) {
+        localState.switches = [];
+      }
+      writeLocalDb();
     }
   } catch (err) {
     console.error("Error reading db.json database file:", err);
@@ -233,6 +270,7 @@ async function seedMongoDatabase() {
       await Complaint.insertMany(defaultComplaints);
       await Notice.insertMany(defaultNotices);
       await Admin.insertMany(defaultAdmins);
+      await ActivityLog.insertMany(defaultLogs);
       
       const seedAtt = generateSeedAttendance();
       const attData = Object.keys(seedAtt).map(d => ({
@@ -246,6 +284,10 @@ async function seedMongoDatabase() {
       const adminExists = await Admin.findOne({ username: "admin" });
       if (!adminExists) {
         await Admin.insertMany(defaultAdmins);
+      }
+      const logExists = await ActivityLog.countDocuments();
+      if (logExists === 0) {
+        await ActivityLog.insertMany(defaultLogs);
       }
     }
     
@@ -278,6 +320,24 @@ function formatRooms(rooms) {
       beds: obj.beds
     };
   });
+}
+
+// Helper to log activities globally
+async function logActivity(actionText) {
+  const timestamp = new Date().toISOString();
+  try {
+    if (useMongo) {
+      const logs = await ActivityLog.find();
+      const nextId = "L" + (logs.length > 0 ? Math.max(...logs.map(l => parseInt(l.id.substring(1)))) + 1 : 1001);
+      await ActivityLog.create({ id: nextId, action: actionText, timestamp });
+    } else {
+      const nextId = "L" + (localState.logs.length > 0 ? Math.max(...localState.logs.map(l => parseInt(l.id.substring(1)))) + 1 : 1001);
+      localState.logs.push({ id: nextId, action: actionText, timestamp });
+      writeLocalDb();
+    }
+  } catch (err) {
+    console.error("Failed to log activity:", err.message);
+  }
 }
 
 // 0. ADMIN AUTH APIs
@@ -474,7 +534,7 @@ app.get('/api/students', async (req, res) => {
 });
 
 app.post('/api/students', async (req, res) => {
-  const { name, roll, branch, phone, email, roomId, bedLabel } = req.body;
+  const { name, roll, branch, phone, email, roomId, bedLabel, advancePayment } = req.body;
   if (!name || !roll || !branch || !phone || !email) {
     return res.status(400).json({ error: "Missing required properties." });
   }
@@ -500,21 +560,56 @@ app.post('/api/students', async (req, res) => {
         branch,
         phone,
         email,
-        roomId: roomId || null,
-        bedLabel: bedLabel || null
+        roomId: null,
+        bedLabel: null
       });
 
       if (roomId && bedLabel) {
         const room = await Room.findById(roomId);
         if (!room) return res.status(404).json({ error: "Room not found." });
-        if (!room.beds) room.beds = {};
-        room.beds[bedLabel] = nextId;
-        room.markModified('beds');
         
-        let total = Object.keys(room.beds).length;
-        let filled = Object.values(room.beds).filter(v => v !== null).length;
-        room.status = (filled === total) ? "Full" : "Occupied";
-        await room.save();
+        const rentAmount = room.rent || 250;
+        const allFees = await Fee.find();
+        const nextInvoiceId = "F" + (allFees.length > 0 ? Math.max(...allFees.map(f => parseInt(f.id.substring(1)))) + 1 : 1001);
+        
+        const isPaid = advancePayment && advancePayment !== "Pending";
+        const feeStatus = isPaid ? "Paid" : "Pending";
+        
+        await Fee.create({
+          id: nextInvoiceId,
+          studentId: nextId,
+          description: `Advance Rent - Room ${roomId}`,
+          amount: rentAmount,
+          dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          status: feeStatus,
+          issueDate: todayDateStr
+        });
+        
+        const notices = await Notice.find();
+        const nextNoticeId = "N" + (notices.length > 0 ? Math.max(...notices.map(n => parseInt(n.id.substring(1)))) + 1 : 101);
+        await Notice.create({
+          id: nextNoticeId,
+          date: todayDateStr,
+          title: isPaid ? `Advance Paid: Room ${roomId}` : `New Invoice Issued: Advance Rent - Room ${roomId}`,
+          category: "Maintenance Alert",
+          message: isPaid 
+            ? `Dear ${name}, advance rent payment of ₹${rentAmount} has been recorded successfully via ${advancePayment}. Room ${roomId} (${bedLabel}) is assigned to you.`
+            : `Dear ${name}, an advance rent invoice of ₹${rentAmount} for Room ${roomId} is pending. Please clear it to confirm allocation.`
+        });
+
+        if (isPaid) {
+          if (!room.beds) room.beds = {};
+          room.beds[bedLabel] = nextId;
+          room.markModified('beds');
+          
+          let total = Object.keys(room.beds).length;
+          let filled = Object.values(room.beds).filter(v => v !== null).length;
+          room.status = (filled === total) ? "Full" : "Occupied";
+          await room.save();
+          
+          student.roomId = roomId;
+          student.bedLabel = bedLabel;
+        }
       }
 
       await student.save();
@@ -536,19 +631,55 @@ app.post('/api/students', async (req, res) => {
       }
       
       const nextId = localState.students.length > 0 ? Math.max(...localState.students.map(s => s.id)) + 1 : 1;
-      const student = { id: nextId, name, roll, branch, phone, email, roomId: roomId || null, bedLabel: bedLabel || null };
       
+      let rentAmount = 250;
+      let isPaid = advancePayment && advancePayment !== "Pending";
+      let feeStatus = isPaid ? "Paid" : "Pending";
+      let assignedRoomId = null;
+      let assignedBedLabel = null;
+
       if (roomId && bedLabel) {
         const room = localState.rooms.find(r => r.id === roomId);
         if (room) {
-          if (!room.beds) room.beds = {};
-          room.beds[bedLabel] = nextId;
-          let total = Object.keys(room.beds).length;
-          let filled = Object.values(room.beds).filter(v => v !== null).length;
-          room.status = (filled === total) ? "Full" : "Occupied";
+          rentAmount = room.rent || 250;
+          
+          const nextInvoiceId = "F" + (localState.fees.length > 0 ? Math.max(...localState.fees.map(f => parseInt(f.id.substring(1)))) + 1 : 1001);
+          const newInvoice = {
+            id: nextInvoiceId,
+            studentId: nextId,
+            description: `Advance Rent - Room ${roomId}`,
+            amount: rentAmount,
+            dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status: feeStatus,
+            issueDate: todayDateStr
+          };
+          localState.fees.push(newInvoice);
+
+          const nextNoticeId = "N" + (localState.notices.length > 0 ? Math.max(...localState.notices.map(n => parseInt(n.id.substring(1)))) + 1 : 101);
+          localState.notices.push({
+            id: nextNoticeId,
+            date: todayDateStr,
+            title: isPaid ? `Advance Paid: Room ${roomId}` : `New Invoice Issued: Advance Rent - Room ${roomId}`,
+            category: "Maintenance Alert",
+            message: isPaid 
+              ? `Dear ${name}, advance rent payment of ₹${rentAmount} has been recorded successfully via ${advancePayment}. Room ${roomId} (${bedLabel}) is assigned to you.`
+              : `Dear ${name}, an advance rent invoice of ₹${rentAmount} for Room ${roomId} is pending. Please clear it to confirm allocation.`
+          });
+
+          if (isPaid) {
+            if (!room.beds) room.beds = {};
+            room.beds[bedLabel] = nextId;
+            let total = Object.keys(room.beds).length;
+            let filled = Object.values(room.beds).filter(v => v !== null).length;
+            room.status = (filled === total) ? "Full" : "Occupied";
+            
+            assignedRoomId = roomId;
+            assignedBedLabel = bedLabel;
+          }
         }
       }
 
+      const student = { id: nextId, name, roll, branch, phone, email, roomId: assignedRoomId, bedLabel: assignedBedLabel };
       localState.students.push(student);
       
       const todayStr = new Date().toISOString().split('T')[0];
@@ -716,7 +847,7 @@ app.post('/api/fees', async (req, res) => {
           date: todayDateStr,
           title: `New Invoice Issued: ${description}`,
           category: "Maintenance Alert",
-          message: `Dear ${student.name}, an invoice dues of $${amount} has been billed to your account. Clear it by ${dueDate}.`
+          message: `Dear ${student.name}, an invoice dues of ₹${amount} has been billed to your account. Clear it by ${dueDate}.`
         });
       }
 
@@ -743,7 +874,7 @@ app.post('/api/fees', async (req, res) => {
           date: todayDateStr,
           title: `New Invoice Issued: ${description}`,
           category: "Maintenance Alert",
-          message: `Dear ${student.name}, an invoice dues of $${amount} has been billed to your account. Clear it by ${dueDate}.`
+          message: `Dear ${student.name}, an invoice dues of ₹${amount} has been billed to your account. Clear it by ${dueDate}.`
         });
       }
 
@@ -957,6 +1088,226 @@ app.post('/api/attendance', async (req, res) => {
       localState.attendance[date][studentId] = status;
       writeLocalDb();
       res.json({ message: "Attendance updated locally", date, studentId, status });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. TIMELINE AUDIT LOGS APIs
+app.get('/api/logs', async (req, res) => {
+  try {
+    if (useMongo) {
+      const logs = await ActivityLog.find().sort({ timestamp: -1 }).limit(15);
+      res.json(logs);
+    } else {
+      const logs = localState.logs.slice().sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
+      res.json(logs);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. ROOM SWITCH WORKFLOW APIs
+app.get('/api/switches', async (req, res) => {
+  const { studentId } = req.query;
+  try {
+    if (useMongo) {
+      const filter = studentId ? { studentId: parseInt(studentId) } : {};
+      const requests = await RoomSwitch.find(filter);
+      res.json(requests);
+    } else {
+      let requests = localState.switches || [];
+      if (studentId) {
+        requests = requests.filter(r => r.studentId === parseInt(studentId));
+      }
+      res.json(requests);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/switches', async (req, res) => {
+  const { studentId, requestedRoomId, requestedBedLabel, reason } = req.body;
+  if (!studentId || !requestedRoomId || !reason) {
+    return res.status(400).json({ error: "Missing studentId, requestedRoomId or reason." });
+  }
+  
+  try {
+    let student, room;
+    if (useMongo) {
+      student = await Student.findOne({ id: parseInt(studentId) });
+      if (!student) return res.status(404).json({ error: "Student not found." });
+      
+      room = await Room.findById(requestedRoomId);
+      if (!room) return res.status(404).json({ error: "Requested room not found." });
+      
+      const switches = await RoomSwitch.find();
+      const nextId = "S" + (switches.length > 0 ? Math.max(...switches.map(s => parseInt(s.id.substring(1)))) + 1 : 101);
+      
+      const newRequest = await RoomSwitch.create({
+        id: nextId,
+        studentId: parseInt(studentId),
+        studentName: student.name,
+        currentRoomId: student.roomId || "None",
+        currentBedLabel: student.bedLabel || "None",
+        requestedRoomId,
+        requestedBedLabel: requestedBedLabel || "Any Bed",
+        reason,
+        status: "Pending",
+        date: todayDateStr
+      });
+      
+      await logActivity(`Room switch request submitted by ${student.name} for Room ${requestedRoomId}`);
+      res.status(201).json(newRequest);
+    } else {
+      student = localState.students.find(s => s.id === parseInt(studentId));
+      if (!student) return res.status(404).json({ error: "Student not found." });
+      
+      room = localState.rooms.find(r => r.id === requestedRoomId);
+      if (!room) return res.status(404).json({ error: "Requested room not found." });
+      
+      const nextId = "S" + (localState.switches.length > 0 ? Math.max(...localState.switches.map(s => parseInt(s.id.substring(1)))) + 1 : 101);
+      const newRequest = {
+        id: nextId,
+        studentId: parseInt(studentId),
+        studentName: student.name,
+        currentRoomId: student.roomId || "None",
+        currentBedLabel: student.bedLabel || "None",
+        requestedRoomId,
+        requestedBedLabel: requestedBedLabel || "Any Bed",
+        reason,
+        status: "Pending",
+        date: todayDateStr
+      };
+      localState.switches.push(newRequest);
+      await logActivity(`Room switch request submitted by ${student.name} for Room ${requestedRoomId}`);
+      writeLocalDb();
+      res.status(201).json(newRequest);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/switches/:id/respond', async (req, res) => {
+  const switchId = req.params.id;
+  const { status } = req.body;
+  
+  if (!status) return res.status(400).json({ error: "Status mode is required." });
+  
+  try {
+    if (useMongo) {
+      const request = await RoomSwitch.findOne({ id: switchId });
+      if (!request) return res.status(404).json({ error: "Room switch request not found." });
+      
+      request.status = status;
+      await request.save();
+      
+      if (status === "Approved") {
+        const student = await Student.findOne({ id: request.studentId });
+        if (student) {
+          if (student.roomId) {
+            const oldRoom = await Room.findById(student.roomId);
+            if (oldRoom && oldRoom.beds) {
+              oldRoom.beds[student.bedLabel] = null;
+              oldRoom.markModified('beds');
+              let filled = Object.values(oldRoom.beds).filter(v => v !== null).length;
+              oldRoom.status = (filled === 0) ? "Vacant" : "Occupied";
+              await oldRoom.save();
+            }
+          }
+          
+          const requestedRoom = await Room.findById(request.requestedRoomId);
+          if (requestedRoom) {
+            if (!requestedRoom.beds) requestedRoom.beds = {};
+            let allocatedBed = null;
+            
+            if (request.requestedBedLabel && request.requestedBedLabel !== "Any Bed" && requestedRoom.beds[request.requestedBedLabel] === null) {
+              allocatedBed = request.requestedBedLabel;
+            } else {
+              allocatedBed = Object.keys(requestedRoom.beds).find(k => requestedRoom.beds[k] === null);
+            }
+            
+            if (allocatedBed) {
+              requestedRoom.beds[allocatedBed] = student.id;
+              requestedRoom.markModified('beds');
+              let total = Object.keys(requestedRoom.beds).length;
+              let filled = Object.values(requestedRoom.beds).filter(v => v !== null).length;
+              requestedRoom.status = (filled === total) ? "Full" : "Occupied";
+              await requestedRoom.save();
+              
+              student.roomId = request.requestedRoomId;
+              student.bedLabel = allocatedBed;
+              await student.save();
+              
+              await logActivity(`Room switch APPROVED: ${student.name} moved to Room ${student.roomId} (${student.bedLabel})`);
+            } else {
+              request.status = "Declined";
+              await request.save();
+              return res.status(400).json({ error: "No vacant bed spaces available in requested room." });
+            }
+          }
+        }
+      } else {
+        await logActivity(`Room switch DECLINED: Request ${switchId} for student ID ${request.studentId}`);
+      }
+      
+      res.json({ message: "Room switch status updated", request });
+    } else {
+      const request = localState.switches.find(r => r.id === switchId);
+      if (!request) return res.status(404).json({ error: "Room switch request not found." });
+      
+      request.status = status;
+      
+      if (status === "Approved") {
+        const student = localState.students.find(s => s.id === request.studentId);
+        if (student) {
+          if (student.roomId) {
+            const oldRoom = localState.rooms.find(r => r.id === student.roomId);
+            if (oldRoom && oldRoom.beds) {
+              oldRoom.beds[student.bedLabel] = null;
+              let filled = Object.values(oldRoom.beds).filter(v => v !== null).length;
+              oldRoom.status = (filled === 0) ? "Vacant" : "Occupied";
+            }
+          }
+          
+          const requestedRoom = localState.rooms.find(r => r.id === request.requestedRoomId);
+          if (requestedRoom) {
+            if (!requestedRoom.beds) requestedRoom.beds = {};
+            let allocatedBed = null;
+            
+            if (request.requestedBedLabel && request.requestedBedLabel !== "Any Bed" && requestedRoom.beds[request.requestedBedLabel] === null) {
+              allocatedBed = request.requestedBedLabel;
+            } else {
+              allocatedBed = Object.keys(requestedRoom.beds).find(k => requestedRoom.beds[k] === null);
+            }
+            
+            if (allocatedBed) {
+              requestedRoom.beds[allocatedBed] = student.id;
+              let total = Object.keys(requestedRoom.beds).length;
+              let filled = Object.values(requestedRoom.beds).filter(v => v !== null).length;
+              requestedRoom.status = (filled === total) ? "Full" : "Occupied";
+              
+              student.roomId = request.requestedRoomId;
+              student.bedLabel = allocatedBed;
+              
+              await logActivity(`Room switch APPROVED: ${student.name} moved to Room ${student.roomId} (${student.bedLabel})`);
+            } else {
+              request.status = "Declined";
+              writeLocalDb();
+              return res.status(400).json({ error: "No vacant bed spaces available in requested room." });
+            }
+          }
+        }
+      } else {
+        await logActivity(`Room switch DECLINED: Request ${switchId} for student ID ${request.studentId}`);
+      }
+      
+      writeLocalDb();
+      res.json({ message: "Room switch status updated", request });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
