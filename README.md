@@ -8,23 +8,37 @@ The system reduces manual paperwork and improves efficiency for both hostel admi
 
 ## Features
  -Student Registration and Management
+ 
  -Room Allocation and Availability Tracking
+ 
  -Fee Management
+ 
  -Complaint Registration and Tracking
+ 
  -Dashboard for Hostel Administration
+ 
  -Responsive User Interface
+ 
  -Real-time Data Management
+ 
  # Tech Stack
 ### Frontend
  -HTML5
+ 
  -CSS3
+ 
  -JavaScript
+ 
 ### Backend
   -Node.js
+  
   -Express.js
+  
 ### Database
   -MongoDB
+  
   -Mongoose
+  
 
 ---
 
